@@ -1,0 +1,108 @@
+/* ===== DFP Matrix Theme — CLEANED (photo first, matrix on start) ===== */
+:root{
+  /* Point this to your real file, e.g. url("/img/background.jpg") */
+  --bg-url: url("background.jpg");
+  --neon: #00ff00;
+  --cyan: #00ccff;
+  --danger: #ff0040;
+}
+
+html, body { height: 100%; }
+
+body{
+  margin: 0; padding: 0; overflow-x: hidden;
+  color: var(--neon);
+  font-family: "Courier New", Courier, monospace;
+  text-shadow: 0 0 5px var(--neon);
+
+  /* Show the photo first */
+  background: #000 var(--bg-url) center / cover no-repeat fixed;
+}
+
+/* After Start: remove photo, go full black so matrix is clear */
+body.matrix-mode{
+  background: #000 !important;              /* kill the photo */
+}
+
+/* Matrix canvas: hidden at first; shown in matrix mode */
+canvas.matrix{
+  position: fixed; inset: 0;
+  z-index: -1;                               /* above body bg, below content */
+  pointer-events: none;
+  display: none;
+}
+body.matrix-mode canvas.matrix{ display: block; }
+
+/* ---------- Panels ---------- */
+/* Dark glass for home & result (so photo is visible behind before start) */
+#homeScreen, #resultScreen{
+  max-width: 900px;
+  margin: 6rem auto 2rem;
+  padding: 1.2rem;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 0 20px rgba(0,255,0,0.08);
+  color: #bfffe0;
+}
+
+/* Quiz panel: solid black as requested */
+#quizScreen{
+  max-width: 900px;
+  margin: 6rem auto 2rem;
+  padding: 1.2rem;
+  border-radius: 14px;
+  background: #000;                           /* solid, no glass */
+  box-shadow: 0 0 20px rgba(0,255,0,0.08);
+  color: #bfffe0;
+}
+
+/* ---------- Type & Buttons ---------- */
+h1, h2, p{
+  text-align: center;
+  margin: 1rem;
+  color: var(--neon);
+  text-shadow: 0 0 5px var(--neon);
+}
+
+button{
+  background: rgba(0,0,0,0.7);
+  border: 2px solid var(--neon);
+  color: var(--neon);
+  font-size: 1.1rem;
+  padding: 0.75rem 1.5rem;
+  margin: 1rem auto;
+  display: block;
+  border-radius: 8px;
+  transition: all 0.25s ease;
+  text-shadow: 0 0 5px var(--neon);
+  cursor: pointer;
+}
+button:hover{
+  background: var(--neon);
+  color: #000;
+  box-shadow: 0 0 15px var(--neon);
+}
+
+/* Variant for in-quiz/result buttons */
+#quizScreen button, #resultScreen button{
+  border-color: var(--cyan);
+  color: var(--cyan);
+  text-shadow: 0 0 5px var(--cyan);
+}
+#quizScreen button:hover, #resultScreen button:hover{
+  background: var(--cyan);
+  color: #000;
+  box-shadow: 0 0 15px var(--cyan);
+}
+
+/* Emphasis */
+#quizScreen h2{
+  color: var(--danger);
+  text-shadow: 0 0 5px var(--danger);
+}
+#scoreMessage{
+  color: var(--neon);
+  font-size: 1.2rem;
+  text-shadow: 0 0 5px var(--neon);
+}

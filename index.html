@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="title">Початковий тест DFP</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Kill old pseudo-bg if any */
+    body::before { content: none !important; }
+
+    /* Photo first */
+    body{
+      background: #000 url("background.jpg") center/cover no-repeat fixed !important;
+      color: #00ff00; font-family: "Courier New", Courier, monospace;
+      text-shadow: 0 0 5px #00ff00; margin: 0; padding: 0; overflow-x: hidden;
+    }
+    /* After start -> full black so matrix pops */
+    body.matrix-mode{ background:#000 !important; }
+
+    /* Matrix canvas visible layer behind content */
+    canvas.matrix{ position:fixed; inset:0; z-index:0; pointer-events:none; }
+
+    /* Panels */
+    #homeScreen, #quizScreen, #resultScreen{
+      position:relative; z-index:1;
+      max-width:900px; margin:6rem auto 2rem; padding:1.2rem; border-radius:14px;
+      box-shadow:0 0 20px rgba(0,255,0,0.08); color:#bfffe0;
+    }
+    #homeScreen, #resultScreen{ background:rgba(0,0,0,.6); backdrop-filter: blur(2px); }
+    #quizScreen{ background:#000; }
+
+    /* Lang toggle */
+    .lang-toggle{ position:fixed; top:12px; right:12px; display:flex; gap:6px; z-index:1000; }
+    .lang-toggle button{ padding:.4rem .7rem; border-radius:10px; border:1px solid #273; background:#0a0; color:#cfc; cursor:pointer }
+    .lang-toggle button.active{ border-color:#0f0; box-shadow:0 0 0 2px rgba(0,255,0,.25) }
+
+    /* Call sign input */
+    .callsign{ max-width:480px; margin:1rem auto 0; }
+    .callsign label{ display:block; margin-bottom:.35rem; color:#9ff; text-align:left; }
+    #callsign{
+      width:100%; padding:.65rem .8rem; border-radius:10px; border:1px solid #00ccff;
+      background:#001015; color:#bfffe0; outline:none;
+    }
+    #callsign:focus{ box-shadow:0 0 0 3px rgba(0,204,255,.25); }
+    #callsignMsg{ display:block; margin-top:.35rem; font-size:.9rem; color:#8bd; text-align:left; min-height:1.2em; }
+    #startBtn:disabled{ opacity:.5; cursor:not-allowed; filter:grayscale(.4); }
+
+    /* Buttons */
+    button{ background:rgba(0,0,0,.7); border:2px solid #00ff00; color:#00ff00; font-size:1.1rem;
+      padding:.75rem 1.5rem; margin:1rem auto; display:block; border-radius:8px; transition:all .25s ease; text-shadow:0 0 5px #00ff00; cursor:pointer; }
+    button:hover{ background:#00ff00; color:#000; box-shadow:0 0 15px #00ff00; }
+    #quizScreen button, #resultScreen button{ border-color:#00ccff; color:#00ccff; text-shadow:0 0 5px #00ccff; }
+    #quizScreen button:hover, #resultScreen button:hover{ background:#00ccff; color:#001015; box-shadow:0 0 15px #00ccff; }
+
+    /* Headings */
+    h1, h2, p{ text-align:center; margin:1rem; color:#00ff00; text-shadow:0 0 5px #00ff00; }
+    #quizScreen h2{ color:#ff0040; text-shadow:0 0 5px #ff0040; }
+
+    /* AAR list */
+    #aar details{ background:#081114; border:1px solid #0a3440; border-radius:10px; padding:.6rem .8rem; margin:.5rem 0; }
+    #aar summary{ cursor:pointer; color:#7fe3ff; }
+
+    /* Submit row */
+    .submit-row{ display:flex; align-items:center; justify-content:center; gap:.8rem; margin-top:1rem; }
+    #submitStatus{ font-size:.95rem; color:#9ff; min-height:1.2em; }
+  </style>
+</head>
+<body>
+
+  <!-- Language Toggle -->
+  <div class="lang-toggle" role="group" aria-label="Language">
+    <button id="lang-uk" class="active" type="button">UK</button>
+    <button id="lang-en" type="button">EN</button>
+  </div>
+
+  <div id="homeScreen">
+    <h1 data-i18n="heading">Початковий тест із цифрового захисту сил (DFP)</h1>
+    <p data-i18n="tagline">Перевір свої знання про кіберзагрози, інструменти та тактики в умовах конфлікту. Ти готовий?</p>
+
+    <!-- Call sign gate -->
+    <div class="callsign">
+      <label for="callsign" data-i18n="callsignLabel">Твій позивний</label>
+      <input id="callsign" type="text" maxlength="60" autocomplete="off"
+             data-i18n-placeholder="callsignPlaceholder" placeholder="Введи позивний">
+      <small id="callsignMsg" data-i18n="callsignRequired">Введи позивний, щоб почати.</small>
+    </div>
+
+    <button id="startBtn" type="button" data-i18n="start" disabled>Почати тест</button>
+  </div>
+
+  <div id="quizScreen" style="display:none"></div>
+
+  <div id="resultScreen" style="display:none">
+    <h2 data-i18n="finished">Тест завершено</h2>
+    <p id="scoreMessage"></p>
+    <p id="callSignEcho"></p>
+
+    <!-- AAR -->
+    <div id="aar"></div>
+
+    <div class="submit-row">
+      <button type="button" id="submitBtn" data-i18n="submit">Відправити</button>
+      <span id="submitStatus" aria-live="polite"></span>
+    </div>
+
+    <button type="button" onclick="location.reload()" data-i18n="retry">Спробувати ще раз</button>
+  </div>
+
+  <canvas class="matrix"></canvas>
+
+  <!-- Optional blockers -->
+  <script>
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', e => {
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C'))) e.preventDefault();
+    });
+  </script>
+
+  <!-- Matrix + Quiz + I18N -->
+  <script>
+    /* ========== MATRIX ========== */
+    const canvas = document.querySelector('.matrix');
+    const ctx = canvas.getContext('2d');
+    const letters = Array(256).join("01").split("");
+    const fontSize = 14;
+    let drops = [];
+    let rafId = null, matrixRunning = false;
+
+    function resizeMatrix(){
+      const dpr = window.devicePixelRatio || 1;
+      canvas.style.width  = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+      canvas.width  = Math.floor(window.innerWidth  * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const columns = Math.floor(window.innerWidth / fontSize);
+      drops = Array.from({ length: columns }).fill(1);
+    }
+    function drawMatrix(){
+      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#0F0";
+      ctx.font = `${fontSize}px monospace`;
+      for (let i = 0; i < drops.length; i++) {
+        const text = letters[Math.floor(Math.random() * letters.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+    }
+    function startMatrix(){
+      if (matrixRunning) return;
+      matrixRunning = true;
+      resizeMatrix();
+      const loop = () => { drawMatrix(); rafId = requestAnimationFrame(loop); };
+      rafId = requestAnimationFrame(loop);
+    }
+    function stopMatrix(){ if (rafId) cancelAnimationFrame(rafId); rafId=null; matrixRunning=false; }
+    window.addEventListener('resize', () => { if (matrixRunning) resizeMatrix(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopMatrix(); else if (document.body.classList.contains('matrix-mode')) startMatrix();
+    });
+
+    /* ========== I18N ========== */
+    const i18nDict = {
+      uk: {
+        title: "Початковий тест DFP",
+        heading: "Початковий тест із цифрового захисту сил (DFP)",
+        tagline: "Перевір свої знання про кіберзагрози, інструменти та тактики в умовах конфлікту. Ти готовий?",
+        callsignLabel: "Твій позивний",
+        callsignPlaceholder: "Введи позивний",
+        callsignRequired: "Введи позивний, щоб почати.",
+        callsignReady: "Готово. Можна розпочинати.",
+        callsignEcho: (cs) => `Позивний: ${cs}`,
+        start: "Почати тест",
+        finished: "Тест завершено",
+        retry: "Спробувати ще раз",
+        submit: "Відправити",
+        submitting: "Надсилаю…",
+        submitted: "Надіслано ✅",
+        submitFailed: "Помилка надсилання",
+        questionPrefix: "Питання",
+        yourScore: (pct, c, total) => `Твій результат: ${pct}% (${c} із ${total})`,
+        aarTitle: "AAR / Розбір помилок",
+        aarItem: (n, your, correct) => `Питання ${n}: твоя відповідь ${your}, правильна — ${correct}`
+      },
+      en: {
+        title: "DFP Initial Quiz",
+        heading: "Digital Force Protection (DFP) — Initial Quiz",
+        tagline: "Check your knowledge of cyber threats, tools, and tactics in contested environments. Ready?",
+        callsignLabel: "Your call sign",
+        callsignPlaceholder: "Enter call sign",
+        callsignRequired: "Enter a call sign to start.",
+        callsignReady: "Ready. You can start.",
+        callsignEcho: (cs) => `Call sign: ${cs}`,
+        start: "Start Quiz",
+        finished: "Quiz Finished",
+        retry: "Try Again",
+        submit: "Submit",
+        submitting: "Submitting…",
+        submitted: "Submitted ✅",
+        submitFailed: "Submit failed",
+        questionPrefix: "Question",
+        yourScore: (pct, c, total) => `Your score: ${pct}% (${c} out of ${total})`,
+        aarTitle: "AAR / Review",
+        aarItem: (n, your, correct) => `Question ${n}: your answer ${your}, correct — ${correct}`
+      }
+    };
+
+    let LANG = localStorage.getItem('lang') || 'uk';
+    const $  = s => document.querySelector(s);
+    const $$ = s => document.querySelectorAll(s);
+
+    function t(key){ const d = i18nDict[LANG] || i18nDict.uk; const v = d[key]; return (typeof v === 'string') ? v : (v ?? i18nDict.uk[key]); }
+
+    function applyUIStrings() {
+      $$('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const val = t(key);
+        if (typeof val === 'string') el.textContent = val;
+      });
+      $$('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        const val = t(key);
+        if (typeof val === 'string') el.setAttribute('placeholder', val);
+      });
+      document.documentElement.lang = LANG;
+      document.title = t('title');
+      $('#lang-uk').classList.toggle('active', LANG === 'uk');
+      $('#lang-en').classList.toggle('active', LANG === 'en');
+      updateStartState(); // refresh hint text on lang change
+    }
+
+    $('#lang-uk').onclick = () => { LANG = 'uk'; localStorage.setItem('lang', LANG); applyUIStrings(); renderQuestion(); };
+    $('#lang-en').onclick = () => { LANG = 'en'; localStorage.setItem('lang', LANG); applyUIStrings(); renderQuestion(); };
+
+    /* ========== QUESTIONS (same as you pasted earlier) ========== */
+    const questions = [
+		  {
+			id: 1,
+			text: {
+			  uk: "Що робить команда `sudo airmon-ng start wlan1`?",
+			  en: "What does the command `sudo airmon-ng start wlan1` do?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Вимикає бездротовий інтерфейс", en: "A) Disables the wireless interface" } },
+			  { code: "B", text: { uk: "B) Переводить wlan1 у режим моніторингу", en: "B) Puts wlan1 into monitor mode" } },
+			  { code: "C", text: { uk: "C) Сканує відкриті порти", en: "C) Scans open ports" } },
+			  { code: "D", text: { uk: "D) Витягує приховані файли", en: "D) Extracts hidden files" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "Ця команда переводить бездротовий інтерфейс у режим моніторингу, що дозволяє перехоплювати пакети.",
+			  en: "This switches the wireless interface into monitor mode, allowing packet capture."
+			}
+		  },
+		  {
+			id: 2,
+			text: {
+			  uk: "Ви отримали терміновий PDF від «Полк. Дж. Метт’юза» — але ви не в його підрозділі. Що відбувається?",
+			  en: "You receive an urgent PDF from “Col. J. Matthews” — but you’re not in his unit. What’s happening?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Атака типу «людина посередині»", en: "A) Man-in-the-middle attack" } },
+			  { code: "B", text: { uk: "B) DDoS-атака", en: "B) DDoS attack" } },
+			  { code: "C", text: { uk: "C) Фішингова спроба", en: "C) Phishing attempt" } },
+			  { code: "D", text: { uk: "D) Викрадення сесії", en: "D) Session hijacking" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Це фішинг. Імперсоналізація та терміновість — класичні ознаки соціальної інженерії.",
+			  en: "Phishing. Impersonation and urgency are classic social engineering signs."
+			}
+		  },
+		  {
+			id: 3,
+			text: {
+			  uk: "Правда чи брехня: хеш MD5 завжди унікальний для будь-якого вхідного файлу.",
+			  en: "True or false: an MD5 hash is always unique for any input file."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "F",
+			debrief: {
+			  uk: "MD5 уразливий до колізій — різні вхідні дані можуть дати однаковий хеш.",
+			  en: "MD5 is collision-prone — different inputs can produce the same hash."
+			}
+		  },
+		  {
+			id: 4,
+			text: {
+			  uk: "Який правильний захід безпеки при використанні публічного Wi-Fi?",
+			  en: "Which is a proper security measure when using public Wi-Fi?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Використовувати Bluetooth-тетеринг", en: "A) Use Bluetooth tethering" } },
+			  { code: "B", text: { uk: "B) Підключитись напряму до локального SSID", en: "B) Connect directly to any local SSID" } },
+			  { code: "C", text: { uk: "C) Увімкнути рандомізацію MAC-адреси", en: "C) Enable MAC address randomization" } },
+			  { code: "D", text: { uk: "D) Дозволити всі автоматичні підключення", en: "D) Allow all auto-connections" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "MAC-рандомізація зменшує ризики відстеження та пасивного спостереження.",
+			  en: "MAC randomization reduces tracking and passive surveillance risks."
+			}
+		  },
+		  {
+			id: 5,
+			text: {
+			  uk: "Який інструмент можна використати для витягування вбудованих даних із зображення?",
+			  en: "Which tool can be used to extract embedded data from an image?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) sha256", en: "A) sha256" } },
+			  { code: "B", text: { uk: "B) nmap", en: "B) nmap" } },
+			  { code: "C", text: { uk: "C) steghide", en: "C) steghide" } },
+			  { code: "D", text: { uk: "D) curl", en: "D) curl" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Steghide призначений для приховування або витягання даних у зображеннях та аудіо.",
+			  en: "Steghide hides/extracts data in images and audio files."
+			}
+		  },
+		  {
+			id: 6,
+			text: {
+			  uk: "Правда чи брехня: атака типу drive-by вимагає, щоб користувач завантажив і запустив файл.",
+			  en: "True or false: a drive-by attack requires the user to download and run a file."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "F",
+			debrief: {
+			  uk: "Брехня — drive-by атаки можуть активуватись просто при відвідуванні сайту.",
+			  en: "False — drive-by attacks can trigger simply by visiting a site."
+			}
+		  },
+		  {
+			id: 7,
+			text: {
+			  uk: "Яке призначення `exiftool` в операціях цифрового захисту?",
+			  en: "What is the purpose of `exiftool` in digital protection operations?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Шифрувати файли", en: "A) Encrypt files" } },
+			  { code: "B", text: { uk: "B) Редагувати вихідний код", en: "B) Edit source code" } },
+			  { code: "C", text: { uk: "C) Переглядати й редагувати метадані", en: "C) View and edit metadata" } },
+			  { code: "D", text: { uk: "D) Відстежувати порти в мережі", en: "D) Track ports on a network" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Exiftool дозволяє переглядати або видаляти метадані, що допомагає уникати витоків OPSEC-інформації.",
+			  en: "Exiftool can view/remove metadata, helping prevent OPSEC leaks."
+			}
+		  },
+		  {
+			id: 8,
+			text: {
+			  uk: "Правда чи брехня: DNS-спуфінг може перенаправити трафік без зміни URL у браузері.",
+			  en: "True or false: DNS spoofing can redirect traffic without changing the URL in the browser."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "T",
+			debrief: {
+			  uk: "Правда — DNS-спуфінг змінює розв’язання домену за лаштунками.",
+			  en: "True — DNS spoofing alters domain resolution behind the scenes."
+			}
+		  },
+		  {
+			id: 9,
+			text: {
+			  uk: "Яка дія допоможе захиститися від фальшивих точок доступу?",
+			  en: "Which action helps defend against rogue access points?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Використовувати VPN лише на телефонах", en: "A) Use a VPN only on phones" } },
+			  { code: "B", text: { uk: "B) Увімкнути сканування Bluetooth", en: "B) Enable Bluetooth scanning" } },
+			  { code: "C", text: { uk: "C) Проводити RF-аналіз та фільтрацію MAC", en: "C) Perform RF analysis and MAC filtering" } },
+			  { code: "D", text: { uk: "D) Приймати локальні SSID, якщо сильний сигнал", en: "D) Accept local SSIDs if signal is strong" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "RF-аналіз і MAC-фільтрація допомагають виявити та знешкодити несанкціоновані пристрої.",
+			  en: "RF analysis and MAC filtering help detect and neutralize rogue devices."
+			}
+		  },
+		  {
+			id: 10,
+			text: {
+			  uk: "Який тип атаки пов'язаний з перевантаженням мережі, щоб зробити її непридатною?",
+			  en: "Which attack type overloads a network to make it unusable?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Цільовий фішинг", en: "A) Spear phishing" } },
+			  { code: "B", text: { uk: "B) DDoS", en: "B) DDoS" } },
+			  { code: "C", text: { uk: "C) MITM", en: "C) MITM" } },
+			  { code: "D", text: { uk: "D) SQL-ін’єкція", en: "D) SQL injection" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "Атаки типу DDoS перевантажують мережу, спричиняючи її недоступність.",
+			  en: "DDoS attacks flood networks, causing unavailability."
+			}
+		  },
+		  {
+			id: 11,
+			text: {
+			  uk: "Яка ключова практика безпеки при аналізі підозрілих USB-пристроїв?",
+			  en: "What is a key safety practice when analyzing suspicious USB devices?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Підключати їх до бойових систем", en: "A) Plug them into operational systems" } },
+			  { code: "B", text: { uk: "B) Використовувати ізольовану форензичну систему", en: "B) Use an isolated forensic system" } },
+			  { code: "C", text: { uk: "C) Форматувати та використовувати повторно", en: "C) Format and reuse them" } },
+			  { code: "D", text: { uk: "D) Довіряти, якщо надані союзниками", en: "D) Trust if provided by allies" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "Підозрілі USB-пристрої слід аналізувати лише в ізольованих (air-gapped) середовищах.",
+			  en: "Analyze suspicious USBs only in isolated (air-gapped) environments."
+			}
+		  },
+		  {
+			id: 12,
+			text: {
+			  uk: "Правда чи брехня: `nmap` може виявляти відкриті порти та активні сервіси на цілі.",
+			  en: "True or false: `nmap` can detect open ports and active services on a target."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "T",
+			debrief: {
+			  uk: "`nmap` — сканер портів, корисний для розвідки й аналізу вразливостей.",
+			  en: "`nmap` is a port scanner useful for recon and vulnerability analysis."
+			}
+		  },
+		  {
+			id: 13,
+			text: {
+			  uk: "Яка кібератака використовує погану фільтрацію вхідних даних у базі даних для викрадення інформації?",
+			  en: "Which cyberattack exploits poor input filtering in a database to steal information?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) XSS-атака", en: "A) XSS attack" } },
+			  { code: "B", text: { uk: "B) DNS-спуфінг", en: "B) DNS spoofing" } },
+			  { code: "C", text: { uk: "C) SQL-ін’єкція", en: "C) SQL injection" } },
+			  { code: "D", text: { uk: "D) MITM", en: "D) MITM" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "SQL-ін’єкція дозволяє атакуючим маніпулювати базою даних через незахищені поля вводу.",
+			  en: "SQL injection manipulates the DB via insecure input fields."
+			}
+		  },
+		  {
+			id: 14,
+			text: {
+			  uk: "Правда чи брехня: `sha256` вважається більш захищеним за `md5` через стійкість до колізій.",
+			  en: "True or false: `sha256` is considered more secure than `md5` due to collision resistance."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "T",
+			debrief: {
+			  uk: "`sha256` — криптографічно стійкіший алгоритм, ніж `md5`, особливо щодо колізій.",
+			  en: "`sha256` is more cryptographically robust than `md5`, especially vs. collisions."
+			}
+		  },
+		  {
+			id: 15,
+			text: {
+			  uk: "Підозрілий сайт завантажується з дивним шрифтом, а браузер видає помилку сертифіката. Що ймовірно сталося?",
+			  en: "A suspicious site loads with odd fonts and a certificate error. What likely happened?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Drive-by шкідливе ПЗ", en: "A) Drive-by malware" } },
+			  { code: "B", text: { uk: "B) URL-обфускація", en: "B) URL obfuscation" } },
+			  { code: "C", text: { uk: "C) DNS-спуфінг", en: "C) DNS spoofing" } },
+			  { code: "D", text: { uk: "D) Внутрішня загроза", en: "D) Insider threat" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Це DNS-спуфінг — зловмисник перенаправив DNS-запити на підроблений сайт.",
+			  en: "DNS spoofing — your DNS queries were redirected to a fake site."
+			}
+		  },
+		  {
+			id: 16,
+			text: {
+			  uk: "Яка з дій є найкращою практикою цифрової OPSEC у польових умовах?",
+			  en: "Which action is best practice for digital OPSEC in the field?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Використання стандартних SSID для швидкого підключення", en: "A) Use standard SSIDs for quick connections" } },
+			  { code: "B", text: { uk: "B) Спільне використання Wi-Fi з союзниками", en: "B) Share Wi-Fi with allies" } },
+			  { code: "C", text: { uk: "C) MAC-рандомізація", en: "C) MAC randomization" } },
+			  { code: "D", text: { uk: "D) Увімкнене автоматичне підключення до мереж", en: "D) Leave auto-join enabled" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "MAC-рандомізація ускладнює відстеження пристрою у ворожому середовищі.",
+			  en: "MAC randomization makes device tracking harder in hostile environments."
+			}
+		  },
+		  {
+			id: 17,
+			text: {
+			  uk: "Ви отримали флешку з написом \"Перекладач для польових умов\" від місцевого постачальника. Як діяти?",
+			  en: "You receive a USB labeled “Field Translator” from a local vendor. What should you do?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Підключити до робочого ноутбука", en: "A) Plug it into your work laptop" } },
+			  { code: "B", text: { uk: "B) Аналізувати в ізольованій системі", en: "B) Analyze it in an isolated system" } },
+			  { code: "C", text: { uk: "C) Довіряти, якщо виглядає справжньою", en: "C) Trust it if it looks genuine" } },
+			  { code: "D", text: { uk: "D) Передати команді для використання", en: "D) Hand it to the team for immediate use" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "USB-пристрої завжди слід перевіряти в sandbox-оточенні, бо вони можуть містити трояни.",
+			  en: "Always inspect USBs in a sandbox — they may carry trojans."
+			}
+		  },
+		  {
+			id: 18,
+			text: {
+			  uk: "Правда чи брехня: Відвідування шкідливого сайту без кліків є безпечним.",
+			  en: "True or false: visiting a malicious site without clicking anything is safe."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "F",
+			debrief: {
+			  uk: "Брехня — деякі сайти містять drive-by код, який виконується без дій користувача.",
+			  en: "False — some sites contain drive-by code that runs without user action."
+			}
+		  },
+		  {
+			id: 19,
+			text: {
+			  uk: "Який тип метаданих може розкрити місцезнаходження або інформацію про пристрій?",
+			  en: "Which type of metadata can reveal location or device info?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) IP-адреса", en: "A) IP address" } },
+			  { code: "B", text: { uk: "B) EXIF-дані", en: "B) EXIF data" } },
+			  { code: "C", text: { uk: "C) Довжина пакета", en: "C) Packet length" } },
+			  { code: "D", text: { uk: "D) Номер порту", en: "D) Port number" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "EXIF-дані часто містять координати GPS, дату, камеру — це OPSEC-ризик.",
+			  en: "EXIF often includes GPS, date, and camera info — an OPSEC risk."
+			}
+		  },
+		  {
+			id: 20,
+			text: {
+			  uk: "У кафе з відкритим Wi-Fi безпечно-чатова програма колеги раптово втрачає зв'язок. Яка атака ймовірна?",
+			  en: "In a café with open Wi-Fi, your colleague’s secure chat suddenly drops. Which attack is likely?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Drive-by атака", en: "A) Drive-by attack" } },
+			  { code: "B", text: { uk: "B) Внутрішня загроза", en: "B) Insider threat" } },
+			  { code: "C", text: { uk: "C) MITM", en: "C) MITM" } },
+			  { code: "D", text: { uk: "D) DNS-спуфінг", en: "D) DNS spoofing" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "MITM-атаки часто відбуваються в незахищених мережах, таких як громадські Wi-Fi.",
+			  en: "MITM is common on unsecured networks like public Wi-Fi."
+			}
+		  },
+		  {
+			id: 21,
+			text: {
+			  uk: "Який хеш-алгоритм краще протистоїть атакам колізій?",
+			  en: "Which hash algorithm better resists collision attacks?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) MD5", en: "A) MD5" } },
+			  { code: "B", text: { uk: "B) SHA256", en: "B) SHA256" } },
+			  { code: "C", text: { uk: "C) XOR", en: "C) XOR" } },
+			  { code: "D", text: { uk: "D) DES", en: "D) DES" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "`SHA256` розроблений для стійкості до колізій, на відміну від `MD5`.",
+			  en: "`SHA256` is designed to resist collisions, unlike `MD5`."
+			}
+		  },
+		  {
+			id: 22,
+			text: {
+			  uk: "Правда чи брехня: Метадані можна змінити або видалити з файлів для захисту OPSEC.",
+			  en: "True or false: metadata can be modified or removed from files to protect OPSEC."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "T",
+			debrief: {
+			  uk: "Інструменти на кшталт `exiftool` дозволяють очищувати файли перед передачею.",
+			  en: "Tools like `exiftool` allow scrubbing files before sharing."
+			}
+		  },
+		  {
+			id: 23,
+			text: {
+			  uk: "Що робить команда `sudo airodump-ng wlan1mon`?",
+			  en: "What does the command `sudo airodump-ng wlan1mon` do?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Запускає перехоплення пакетів у моніторинговому режимі", en: "A) Starts packet capture in monitor mode" } },
+			  { code: "B", text: { uk: "B) Вимикає Wi-Fi-інтерфейс", en: "B) Disables the Wi-Fi interface" } },
+			  { code: "C", text: { uk: "C) Запускає brute-force атаку", en: "C) Starts a brute-force attack" } },
+			  { code: "D", text: { uk: "D) Клонує Wi-Fi точку доступу", en: "D) Clones a Wi-Fi access point" } }
+			],
+			correctCode: "A",
+			debrief: {
+			  uk: "`airodump-ng` захоплює трафік поблизу в моніторинговому режимі.",
+			  en: "`airodump-ng` captures nearby traffic in monitor mode."
+			}
+		  },
+		  {
+			id: 24,
+			text: {
+			  uk: "Ви знаходите приховану камеру під полицею у безпечному будинку. Що слід зробити?",
+			  en: "You find a hidden camera under a shelf in a safe house. What should you do?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Заклеїти її стрічкою", en: "A) Tape it over" } },
+			  { code: "B", text: { uk: "B) Знищити її", en: "B) Destroy it" } },
+			  { code: "C", text: { uk: "C) Провести повний TSCM-аналіз", en: "C) Conduct a full TSCM sweep" } },
+			  { code: "D", text: { uk: "D) Ігнорувати, якщо не передає дані", en: "D) Ignore if it isn’t transmitting" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "TSCM (технічні контрзаходи) дозволяють виявити інші пристрої стеження.",
+			  en: "TSCM (technical surveillance counter-measures) can reveal other devices."
+			}
+		  },
+		  {
+			id: 25,
+			text: {
+			  uk: "Правда чи брехня: Прийняття стандартних SSID у ворожому середовищі безпечне, якщо сигнал сильний.",
+			  en: "True or false: Accepting standard SSIDs in a hostile environment is safe if the signal is strong."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "F",
+			debrief: {
+			  uk: "SSIDs можуть бути підроблені. Використовуйте перевірені пристрої або travel router.",
+			  en: "SSIDs can be spoofed. Use trusted gear or a travel router."
+			}
+		  },
+		  {
+			id: 26,
+			text: {
+			  uk: "Що виводить команда `sha256sum filename.txt`?",
+			  en: "What does the command `sha256sum filename.txt` output?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Ентропію файлу", en: "A) The file’s entropy" } },
+			  { code: "B", text: { uk: "B) Hex-кодований хеш", en: "B) A hex-encoded hash" } },
+			  { code: "C", text: { uk: "C) Ключ підпису", en: "C) A signing key" } },
+			  { code: "D", text: { uk: "D) Підказку до пароля", en: "D) A password hint" } }
+			],
+			correctCode: "B",
+			debrief: {
+			  uk: "`sha256sum` генерує SHA256-хеш — корисно для перевірки цілісності файлів.",
+			  en: "`sha256sum` generates a SHA256 hash — useful for integrity checks."
+			}
+		  },
+		  {
+			id: 27,
+			text: {
+			  uk: "Фішинг-лист надходить нібито від реального підрозділу з правильними позивними. Яка атака відбувається?",
+			  en: "A phishing email arrives seemingly from a real unit with correct call signs. What attack is this?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Whale phishing", en: "A) Whale phishing" } },
+			  { code: "B", text: { uk: "B) Drive-by phishing", en: "B) Drive-by phishing" } },
+			  { code: "C", text: { uk: "C) Цільовий фішинг (spear-phishing)", en: "C) Targeted phishing (spear-phishing)" } },
+			  { code: "D", text: { uk: "D) Brute force", en: "D) Brute force" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Spear-phishing — це фішинг, спрямований на конкретну ціль з персоналізованою інформацією.",
+			  en: "Spear-phishing targets a specific victim using personalized details."
+			}
+		  },
+		  {
+			id: 28,
+			text: {
+			  uk: "Правда чи брехня: VPN на рівні маршрутизатора захищає всі пристрої в мережі.",
+			  en: "True or false: a router-level VPN protects all devices on the network."
+			},
+			choices: [
+			  { code: "T", text: { uk: "True", en: "True" } },
+			  { code: "F", text: { uk: "False", en: "False" } }
+			],
+			correctCode: "T",
+			debrief: {
+			  uk: "VPN на роутері забезпечує захищене тунелювання для всіх підключених пристроїв.",
+			  en: "A router VPN tunnels traffic for all connected devices."
+			}
+		  },
+		  {
+			id: 29,
+			text: {
+			  uk: "Що слід зробити, якщо sideloaded APK встановлює підозрілі вихідні з’єднання?",
+			  en: "What should you do if a sideloaded APK initiates suspicious outbound connections?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Довіряти, якщо додаток популярний", en: "A) Trust it if the app is popular" } },
+			  { code: "B", text: { uk: "B) Негайно стерти телефон", en: "B) Immediately wipe the phone" } },
+			  { code: "C", text: { uk: "C) Аналізувати в ізольованому середовищі", en: "C) Analyze it in an isolated environment" } },
+			  { code: "D", text: { uk: "D) Вимкнути DNS", en: "D) Disable DNS" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "Такі APK потрібно перевіряти в sandbox-оточенні до будь-якого використання.",
+			  en: "Inspect such APKs in a sandbox before any use."
+			}
+		  },
+		  {
+			id: 30,
+			text: {
+			  uk: "Який перший крок найефективніший при виявленні підробленої точки Wi-Fi поблизу?",
+			  en: "What is the most effective first step when detecting a fake Wi-Fi AP nearby?"
+			},
+			choices: [
+			  { code: "A", text: { uk: "A) Жорстко прописати MAC-адресу", en: "A) Hard-code the MAC address" } },
+			  { code: "B", text: { uk: "B) Не вимикати Wi-Fi", en: "B) Don’t disable Wi-Fi" } },
+			  { code: "C", text: { uk: "C) Провести RF-аналіз", en: "C) Perform RF analysis" } },
+			  { code: "D", text: { uk: "D) Підключитися, щоб зібрати розвіддані", en: "D) Connect to gather intelligence" } }
+			],
+			correctCode: "C",
+			debrief: {
+			  uk: "RF-сканування дозволяє виявити джерело сигналу — це критично у ворожому середовищі.",
+			  en: "RF scanning helps locate the signal source — critical in hostile environments."
+			}
+		  }
+		];
+
+    /* ========== QUIZ STATE ========== */
+    const quizScreen   = document.getElementById("quizScreen");
+    const resultScreen = document.getElementById("resultScreen");
+    const homeScreen   = document.getElementById("homeScreen");
+    const scoreMessage = document.getElementById("scoreMessage");
+    const callsignInput = document.getElementById("callsign");
+    const callsignMsg = document.getElementById("callsignMsg");
+    const callSignEcho = document.getElementById("callSignEcho");
+    const startBtn = document.getElementById("startBtn");
+    const submitBtn = document.getElementById("submitBtn");
+    const submitStatus = document.getElementById("submitStatus");
+
+    let current = 0, correct = 0;
+    let answers = [];
+    let CALLSIGN = "";
+    let startedAt = null;
+
+    // Prefill callsign
+    (function initCallsign(){
+      const saved = localStorage.getItem('dfp_callsign') || "";
+      if (saved) callsignInput.value = saved;
+      updateStartState();
+      callsignInput.addEventListener('input', updateStartState);
+    })();
+
+    function updateStartState(){
+      const ok = callsignInput.value.trim().length >= 2;
+      startBtn.disabled = !ok;
+      callsignMsg.textContent = ok ? t('callsignReady') : t('callsignRequired');
+    }
+
+    function getText(obj){ if (!obj) return ""; return (obj[LANG] ?? obj.uk ?? ""); }
+
+    function renderQuestion() {
+      if (quizScreen.style.display === "none") return;
+      const q = questions[current];
+      if (!q) return;
+      const qPrefix = t('questionPrefix');
+      quizScreen.innerHTML = `
+        <h2>${qPrefix} ${current + 1}: ${getText(q.text)}</h2>
+        <div id="choices"></div>
+      `;
+      const container = document.getElementById("choices");
+      q.choices.forEach(choice => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = getText(choice.text);
+        btn.setAttribute('data-code', choice.code);
+        btn.onclick = () => handleAnswer(choice.code);
+        container.appendChild(btn);
+      });
+    }
+
+    function handleAnswer(selectedCode) {
+      const q = questions[current];
+      const isCorrect = (selectedCode === q.correctCode);
+      if (isCorrect) correct++;
+      answers.push({ id: q.id, selectedCode, correctCode: q.correctCode, isCorrect });
+
+      current++;
+      if (current < questions.length) {
+        renderQuestion();
+      } else {
+        showResult();
+      }
+    }
+
+    function showResult() {
+      quizScreen.style.display = "none";
+      resultScreen.style.display = "block";
+      const percent = Math.round((correct / questions.length) * 100);
+      scoreMessage.textContent = i18nDict[LANG]?.yourScore?.(percent, correct, questions.length)
+        ?? i18nDict.uk.yourScore(percent, correct, questions.length);
+
+      callSignEcho.textContent = (i18nDict[LANG]?.callsignEcho?.(CALLSIGN)) ?? `Call sign: ${CALLSIGN}`;
+
+      // Build AAR (missed only)
+      const aar = document.getElementById('aar');
+      const missed = answers.filter(a => !a.isCorrect);
+      aar.innerHTML = "";
+      const title = document.createElement('h3');
+      title.textContent = t('aarTitle');
+      aar.appendChild(title);
+      if (missed.length === 0) {
+        const p = document.createElement('p');
+        p.textContent = LANG === 'uk' ? "Без помилок. Гарна робота!" : "No mistakes. Great job!";
+        aar.appendChild(p);
+      } else {
+        missed.forEach(m => {
+          const q = questions.find(q => q.id === m.id);
+          const d = document.createElement('details');
+          const s = document.createElement('summary');
+          s.textContent = (i18nDict[LANG]?.aarItem?.(m.id, m.selectedCode, q.correctCode))
+                          || `Q${m.id}: your ${m.selectedCode}, correct ${q.correctCode}`;
+          const body = document.createElement('div');
+          const qt = document.createElement('p'); qt.innerHTML = `<strong>${getText(q.text)}</strong>`;
+          const df = document.createElement('p'); df.textContent = getText(q.debrief);
+          body.appendChild(qt); body.appendChild(df);
+          d.appendChild(s); d.appendChild(body);
+          aar.appendChild(d);
+        });
+      }
+    }
+
+    function startQuiz() {
+      const val = callsignInput.value.trim();
+      if (val.length < 2) { updateStartState(); return; }
+      CALLSIGN = val;
+      localStorage.setItem('dfp_callsign', CALLSIGN);
+
+      document.body.classList.add('matrix-mode'); // photo -> black
+      startMatrix();                               // start rain
+
+      homeScreen.style.display = "none";
+      quizScreen.style.display = "block";
+      current = 0; correct = 0; answers = []; startedAt = new Date();
+      renderQuestion();
+    }
+
+    // Wire buttons
+    startBtn.onclick = startQuiz;
+
+    // Submit → Google Sheets webhook (Apps Script)
+    const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx_IBpMZktdCF_kQEi-e40aIfii9m6IfHVdTT-cF7SB8sSG5N_GiWCvQAaTj9Ej56z1Eg/exec"; // TODO: paste your URL
+    submitBtn.onclick = async () => {
+      const finishedAt = new Date();
+      const percent = Math.round((correct / questions.length) * 100);
+      const payload = {
+        callsign: CALLSIGN,
+        lang: LANG,
+        startedAt: startedAt?.toISOString?.() || null,
+        finishedAt: finishedAt.toISOString(),
+        score: { correct, total: questions.length, percent },
+        answers: answers.map(a => ({
+          id: a.id, selected: a.selectedCode, correct: a.correctCode, isCorrect: a.isCorrect
+        })),
+        ua: navigator.userAgent,
+        dpr: window.devicePixelRatio || 1
+      };
+
+      if (!WEBHOOK_URL || WEBHOOK_URL.includes("REPLACE_ME")) {
+        submitStatus.textContent = (LANG === 'uk') ? "Вкажи URL вебхука (Apps Script)." : "Set the webhook URL (Apps Script).";
+        return;
+      }
+
+      submitStatus.textContent = t('submitting');
+      try {
+        await fetch(WEBHOOK_URL, {
+          method: "POST",
+          // Using text/plain avoids preflight; Apps Script will see raw body
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+        submitStatus.textContent = t('submitted');
+      } catch (e) {
+        submitStatus.textContent = t('submitFailed');
+      }
+    };
+
+    // Initial i18n apply
+    applyUIStrings();
+  </script>
+</body>
+</html>
